@@ -1,0 +1,5 @@
+// Place your settings in this file to overwrite default and user settings.
+{
+    "python.venvPath": "${workspaceRoot}/venv",
+    "python.pythonPath": "${workspaceRoot}/venv/Scripts/python.exe"
+}
