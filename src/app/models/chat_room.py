@@ -9,7 +9,6 @@ class ChatRoom(Document):
     """
     Chat room object
     """
-    name = StringField(required=True, max_length=100)
     creator = StringField(required=True)
     created_at = DateTimeField(required=True, default=datetime.utcnow())
     participants = ListField()

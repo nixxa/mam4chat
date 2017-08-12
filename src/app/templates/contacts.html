@@ -1,0 +1,225 @@
+<html>
+    <head>
+        <title>Chat</title>
+        <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/pure-min.css">
+        <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/grids-responsive-min.css">
+        <script type="text/javascript" src="//code.jquery.com/jquery-2.2.4.min.js"></script>
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.6/socket.io.js"></script>
+        <script type="text/javascript">
+            var socket;
+
+            $(document).ready(function () {
+                initAddLinks();
+                loadConversations();
+            });
+
+            function getHeaders() {
+                return { "Authorization": "Bearer " + sessionStorage["token"] };
+            }
+
+            function loadHistory(roomId) {
+                fetch('/api/history/' + roomId, { headers: getHeaders() })
+                    .then(function (response) {
+                        return response.json();                        
+                    })
+                    .then(function (response) {
+                        console.log(response);
+                        renderMessages(response);
+                    });
+            }
+
+            function loadConversations() {
+                fetch("/api/conversations", { headers: getHeaders() })
+                    .then(function (response) {
+                        return response.json();
+                    })
+                    .then(function (response) {
+                        console.log(response);
+                        sessionStorage["list"] = JSON.stringify(response);
+                        renderConversations(response);
+                    });
+            }
+
+            function renderConversations(list) {
+                for (var i = 0; i < list.length; i++) {
+                    renderConversation(list[i]);
+                };
+                initMenuItems();
+            }
+
+            function renderConversation(room) {
+                var $cont = $("#conversations");
+                var room_id = room._id.$oid;
+                var members = ' (' + room.participants.join(',') + ')';
+                $cont.append('<li class="pure-menu-item menu-item" data-roomid="' + room_id 
+                    + '"><a href="#" class="pure-menu-link">' + room_id + members + '</a></li>');
+            }
+
+            function startConversation(participants) {
+                fetch("/api/start", { method: "POST", headers: getHeaders() }, { participants: participants })
+                    .then(function (response) {
+                        return response.json();
+                    })
+                    .then(function (response) {
+                        console.log(response);
+                        renderConversation(response);
+                    });
+            }
+
+            function initMenuItems() {
+                $('.pure-menu-item').click(function (evt) {
+                    leave(sessionStorage["conversation"]);
+                    var roomId = $(this).data('roomid');
+                    sessionStorage["conversation"] = roomId;
+                    cleanupRoom();
+                    renderConversationTitle(roomId);                    
+                    loadHistory(roomId);
+                    join(roomId);
+                });
+            }
+
+            function renderMessages(messages) {
+                for (var i = messages.length - 1; i >= 0; i--) {
+                    renderMessage(messages[i], true);
+                }
+            }
+
+            function renderMessage(msg, send_read) {
+                token = parseJwt(sessionStorage['token']);
+                current_user = '' + token.identity;
+                var conv = findConversation(sessionStorage["conversation"]);
+                var was_read = true;
+                if (conv != null) {
+                    for (var i = 0; i < conv.participants.length; i++) {
+                        was_read = was_read && msg.read_by.includes(conv.participants[i]);
+                    }
+                }
+                var was_sent = msg.read_by.includes(current_user) && msg.author == current_user;
+                var status = " (" + was_sent + "," + was_read + ")";
+                if (!msg.read_by.includes(current_user) && send_read) {
+                    var socketMessage = createMessage("");
+                    socketMessage.messageId = msg._id.$oid;
+                    socket.emit('read', socketMessage);
+                }
+                if (msg.author == current_user) {
+                    $('#room').append('<div class="right">' + msg.text + status + '</div>')
+                } else {
+                    $('#room').append('<div class="left">' + msg.text + status + '</div>')
+                }
+            }
+
+            function initAddLinks() {
+                $(".add-link").click(function (evt) {
+                    var userid = $(this).data('userid');
+                    startConversation(userid);
+                    initMenuItems();
+                });
+            }
+
+            function activateTextInput() {
+                $('#text').keypress(function(e) {
+                    var code = e.keyCode || e.which;
+                    if (code == 13) {
+                        text = $('#text').val();
+                        $('#text').val('');
+                        var msg = createMessage(text);
+                        socket.emit('text', msg);
+                    } else {
+                        socket.emit('typing', createMessage(""));
+                    }
+                });
+            }
+
+            function join(room) {
+                if (!socket)
+                {
+                    socket = io.connect(
+                        'http://' + document.domain + ':' + location.port + '/chat', 
+                        {
+                            query: { token: sessionStorage["token"] } 
+                        });
+                    socket.on('connect', function () {
+                        socket.emit('join', room);
+                    });
+                    socket.on('message', function(data) {
+                        var message = JSON.parse(data);
+                        renderMessage(message, true);
+                    });
+                } else {
+                    socket.emit('join', room);
+                }
+                activateTextInput();
+            }
+
+            function cleanupRoom() {
+                $('#room').html('');
+            }
+            
+            function findConversation(conv_id) {
+                var conv = null;
+                var arr = JSON.parse(sessionStorage["list"]);
+                for (var i = 0; i < arr.length; i++) {
+                    if (arr[i]._id.$oid == conv_id) {
+                        conv = arr[i];
+                    }
+                }
+                return conv;
+            }
+
+            function renderConversationTitle(conv_id) {
+                var conv = findConversation(conv_id);
+                $("#room").append("<h3>Conversation with " + conv.participants.toString() + "</h3>");
+            }
+
+            function leave(room) {
+                if (socket) {
+                    socket.emit('leave', room)
+                }
+            }
+
+            function createMessage(text) {
+                return {
+                    "conversation": sessionStorage["conversation"],
+                    "text": text
+                }
+            }
+
+            function parseJwt (token) {
+                var base64Url = token.split('.')[1];
+                var base64 = base64Url.replace('-', '+').replace('_', '/');
+                return JSON.parse(window.atob(base64));
+            };
+        </script>
+    </head>
+    <body>
+        <style>
+            .menu-item {
+                height: auto !important;
+            }
+            .right {
+                text-align: right;
+            }
+            .left {
+                text-align: left;
+            }
+        </style>
+        <div class="pure-g">
+            <div class="pure-u-1-4">
+                <div class="pure-menu">
+                    <span class="pure-menu-heading">
+                        Contacts 
+                        <a href="#" class="add-link" data-userid="2">+</a> 
+                        <a href="#" class="add-link" data-userid="3">++</a> 
+                        <a href="#" class="add-link" data-userid="4">+++</a>
+                    </span>
+                    <ul class="pure-menu-list" id="conversations">
+                    </ul>
+                </div>
+            </div>
+            <div class="pure-u-3-4" >
+                <div style="height: 600px; border: 1px solid #808080" id="room"></div>
+                <input type="text" id="text" style="width: 100%" />
+            </div>
+        </div>
+    </body>
+</html>

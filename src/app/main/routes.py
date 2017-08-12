@@ -1,39 +1,24 @@
 ''' Routes '''
 import logging
-from flask import session, redirect, url_for, render_template, request
+from flask import render_template
 from . import main
-from .forms import LoginForm
+from flask_jwt import jwt_required
+
 
 LOGGER = logging.getLogger(__name__)
 
-@main.route('/', methods=['GET', 'POST'])
+
+@main.route('/')
 def index():
     """
-    Login form to enter a room.
+    Index page
     """
-    form = LoginForm()
-    if form.validate_on_submit():
-        session['name'] = form.name.data
-        session['room'] = form.room.data
-        return redirect(url_for('.chat'))
-    elif request.method == 'GET':
-        form.name.data = session.get('name', '')
-        form.room.data = session.get('room', '')
-    return render_template(
-        'index.html', 
-        form=form)
+    return render_template('index.html')
 
 
-@main.route('/chat')
-def chat():
+@main.route('/contacts')
+def contacts():
     """
-    Chat room. The user's name and room must be stored in the session.
+    Contacts page
     """
-    name = session.get('name', '')
-    room = session.get('room', '')
-    if name == '' or room == '':
-        return redirect(url_for('.index'))
-    return render_template(
-        'chat.html', 
-        name=name, 
-        room=room)
+    return render_template('contacts.html')

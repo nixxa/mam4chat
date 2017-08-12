@@ -6,6 +6,6 @@ from mongoengine import Document, StringField, DateTimeField, IntField
 
 
 class ChatUser(Document):
-    name = StringField(required=True)
+    user_id = StringField(required=True)
     status = IntField()
     last_seen = DateTimeField(default=datetime.utcnow())

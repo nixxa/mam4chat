@@ -5,13 +5,15 @@ from logging.handlers import TimedRotatingFileHandler
 from flask import Flask
 from flask_socketio import SocketIO
 from mongoengine import register_connection
+from .auth import authenticate, identity
+from flask_jwt import JWT
 
 SOCKETIO = SocketIO()
 
-def create_app(app_mode='DEBUG'):
+def create_app(app_mode='DEVEL'):
     ''' Create flask app and configure it '''
     if app_mode == '':
-        app_mode = os.environ.get('APP_MODE', 'DEBUG')
+        app_mode = os.environ.get('APP_MODE', 'DEVEL')
     # create an application
     application = Flask(__name__)
     # set logging
@@ -35,7 +37,7 @@ def create_app(app_mode='DEBUG'):
 def configure_logging(app_mode, application):
     ''' Configure logging '''
     log_handler = None
-    if app_mode == 'DEBUG':
+    if app_mode == 'DEVEL':
         # create console handler
         log_handler = logging.StreamHandler()
     elif app_mode == 'PROD':
@@ -71,4 +73,5 @@ def configure(application):
         filename = os.path.join(os.getcwd(), "config", "development.py")
     logger.info("Configuring from: " + filename)
     application.config.from_pyfile(filename)
+    application.debug = True
     return

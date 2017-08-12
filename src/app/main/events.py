@@ -1,25 +1,47 @@
 ''' Chat events '''
-from flask import session
+#pylint: disable=E1101
+import json
+
+from datetime import datetime
+
+from flask import g, request
 from flask_socketio import emit, join_room, leave_room
+from werkzeug.utils import escape
+
 from .. import SOCKETIO
-from ..models import ChatMessage
-from .repository import Repository
+from ..models import ChatMessage, ChatRoom, ChatUser
+from .api import verify_token
 
 
-@SOCKETIO.on('joined', namespace='/chat')
-def joined(message):
+@SOCKETIO.on('join', namespace='/chat')
+def join(room_id):
     """
-    Sent by clients when they enter a room.
-    A status message is broadcast to all people in the room.
+    Joining user to the room
     """
-    room = session.get('room')
-    actor = session.get('name')
-    Repository.get_or_add_room(room, actor)
-    Repository.update_user_activity(actor)
-    join_room(room)
-    last_messages = Repository.get_last(room, actor)
-    for item in last_messages:
-        emit('message', item.to_json(), room=room)
+    token = request.args["token"]
+    token_valid = verify_token(token)
+    if not token_valid:
+        return
+    current_user_id = str(g.current_user)
+    join_room(room_id)
+    conversation = ChatRoom.objects().get(id=room_id)
+    if not conversation is None:
+        if not current_user_id in conversation.participants:
+            conversation.participants.append(current_user_id)
+            conversation.save()
+    emit("joined", conversation.to_json())
+
+
+@SOCKETIO.on('leave', namespace='/chat')
+def leave(room_id):
+    """
+    Leave the specified room
+    """
+    token = request.args["token"]
+    token_valid = verify_token(token)
+    if not token_valid:
+        return
+    leave_room(room_id)
 
 
 @SOCKETIO.on('text', namespace='/chat')
@@ -28,31 +50,28 @@ def text(message):
     Sent by a client when the user entered a new message.
     The message is sent to all people in the room.
     """
-    room = session.get('room')
-    msg = message['msg']
-    author = session.get('name')
-    existing_room = Repository.get_or_add_room(room, author)
+    token = request.args["token"]
+    token_valid = verify_token(token)
+    if not token_valid:
+        return
+    conversation_id = message["conversation"]
+    txt = message["text"]
+    if txt == "":
+        return
+    author_id = str(g.current_user)
+    conversation = ChatRoom.objects().get(id=conversation_id)
+    if not conversation:
+        return
     chat_message = ChatMessage(
-        room_name=existing_room.name,
-        author=author,
-        text=msg,
-        read_by=[author]
+        room_id=conversation_id,
+        created_at=datetime.utcnow(),
+        author=author_id,
+        text=escape(txt),
+        read_by=[author_id]
     )
     chat_message.save()
-    Repository.update_user_activity(author)
-    emit('message', chat_message.to_json(), room=room)
-
-
-@SOCKETIO.on('left', namespace='/chat')
-def left(message):
-    """
-    Sent by clients when they leave a room.
-    A status message is broadcast to all people in the room.
-    """
-    room = session.get('room')
-    actor = session.get('name')
-    Repository.logoff(actor)
-    leave_room(room)
+    update_user_activity(author_id)
+    emit('message', chat_message.to_json(), room=conversation_id)
 
 
 @SOCKETIO.on('read', namespace='/chat')
@@ -60,11 +79,50 @@ def read(message):
     """
     Set status for message
     """
-    room = session.get('room')
-    actor = session.get('name')
-    msg = Repository.get_message(message['id'])
+    token = request.args["token"]
+    token_valid = verify_token(token)
+    if not token_valid:
+        return
+    conversation_id = message["conversation"]
+    message_id = message["messageId"]
+    author_id = str(g.current_user)
+    msg = ChatMessage.objects().get(id=message_id)
     if not msg is None:
-        if not actor in msg.read_by:
-            msg.read_by.append(actor)
+        if not author_id in msg.read_by:
+            msg.read_by.append(author_id)
             msg.save()
+            emit('read', msg.to_json(), room=conversation_id)
     return
+
+
+@SOCKETIO.on('typing', namespace='/chat')
+def typing(message):
+    """
+    Set user status to typing
+    """
+    token = request.args["token"]
+    token_valid = verify_token(token)
+    if not token_valid:
+        return
+    conversation_id = message["conversation"]
+    author_id = str(g.current_user)
+    author = ChatUser.objects(user_id=author_id).first()
+    emit('typing', {"user": json.loads(author.to_json()), "typing": True}, room=conversation_id)
+
+
+def update_user_activity(uid):
+    """
+    Update user status and date of last activity
+    :param: uid - user identity
+    """
+    user = ChatUser.objects(user_id=uid).first()
+    if user is None:
+        user = ChatUser(
+            user_id=uid,
+            status=1
+        )
+        user.save()
+    else:
+        user.last_seen = datetime.utcnow()
+        user.save()
+    return user

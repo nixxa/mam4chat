@@ -1,14 +1,31 @@
 <html>
     <head>
         <title>Chat</title>
+        <script type="text/javascript" src="//code.jquery.com/jquery-2.2.4.min.js"></script>
+        <script type="text/javascript">
+            function login() {
+                var username = $('#username').val();
+                var password = $('#password').val();
+
+                $.ajax({
+                    type: "POST",
+                    url: '/auth',
+                    contentType: 'application/json; charset=utf-8',
+                    dataType: 'json',
+                    data: JSON.stringify({ 'username': username, 'password': password }), 
+                    success: function (data) {
+                        var token = data.access_token;
+                        sessionStorage.setItem('token', token);
+                        window.location = '/contacts'
+                    }
+                });
+            }
+        </script>
     </head>
     <body>
         <h1>Chat</h1>
-        <form method="POST">
-            {{ form.hidden_tag() }}
-            {{ form.name.label }}: {{ form.name() }} {% for error in form.name.errors %}{{ error }}{% endfor %}<br>
-            {{ form.room.label }}: {{ form.room() }} {% for error in form.room.errors %}{{ error }}{% endfor %}<br>
-            {{ form.submit() }}
-        </form>
+        <input id="username" type="text" name="username" value="">
+        <input id="password" type="password" name="password" value="">
+        <button onclick="login()">Log in</button>
     </body>
 </html>
